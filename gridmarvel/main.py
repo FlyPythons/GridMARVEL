@@ -6,7 +6,7 @@ import logging
 
 
 from gridmarvel.DAGflow import DAG, Task, ParallelTask, do_dag, set_tasks_order
-from gridmarvel.config import BIN_DIR, SCRIPT_DIR, DEF_DALIGNER_T_MIN, DEF_DALIGNER_T_MAX, MARVEL_DIR
+from gridmarvel.config import BIN_DIR, SCRIPT_DIR, DEF_DALIGNER_T_MIN, DEF_DALIGNER_T_MAX, LIB_DIR
 from gridmarvel.common import mkdir, read_config
 
 
@@ -316,14 +316,14 @@ TKmerge -d {db} trim1
         type="sge",
         option="",
         script="""\
-export PYTHONPATH={marvel_dir}:$PYTHONPATH
+export PYTHONPATH={lib_dir}:$PYTHONPATH
 {bin}/LAmerge -S filtered {db} {db}.filtered.las
 {bin}/OGbuild -t trim1 {db} {db}.filtered.las {db}.graphml
 {script}/OGtour.py -c {db} {db}.graphml
 {bin}/LAcorrect -j 4 -r {db}.tour.ids {db}.filtered.las {db}.corrected
 {bin}/FA2db -c {db}_corrected [expand:{db}.corrected.*.fasta]
 {script}/tour2fasta.py -c {db}_corrected -t trim1 {db} {db}.tour.graphml {db}.tour.paths
-        """.format(bin=BIN_DIR, db=db, script=SCRIPT_DIR, marvel_dir=MARVEL_DIR)
+        """.format(bin=BIN_DIR, db=db, script=SCRIPT_DIR, lib_dir=LIB_DIR)
     )
 
     asm_task.set_upstream(*filter_tasks)
