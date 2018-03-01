@@ -20,7 +20,7 @@ class DAG(object):
     def __init__(self, dag_id):
         self.id = dag_id
         self.tasks = OrderedDict()
-        LOG.info("create DAG %r" % self.id)
+        #LOG.info("create DAG %r" % self.id)
 
     def add_task(self, *tasks):
         for task in tasks:
@@ -75,7 +75,7 @@ class DAG(object):
         with open(fn, "w") as fh:
             json.dump(jsn, fh, indent=2)
 
-        LOG.info("Write DAG %r tasks to %r" % (self.id, fn))
+        #LOG.info("Write DAG %r tasks to %r" % (self.id, fn))
 
         return fn
 
@@ -138,6 +138,7 @@ class Task(object):
         the run option of the task
         :return:
         """
+
         option = str2dict(self._option)
 
         if "o" not in option:
@@ -449,11 +450,13 @@ def str2dict(string):
                     r[param] = " ".join(value)
                 else:
                     r[param] = True
-
-                param = p.lstrip("-")
-                value = []
+            param = p.lstrip("-")
+            value = []
         else:
             value.append(p)
+
+    if param:
+        r[param] = " ".join(value)
 
     return r
 

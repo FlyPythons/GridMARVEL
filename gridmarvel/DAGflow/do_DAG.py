@@ -241,8 +241,8 @@ def do_dag(dag, concurrent_tasks=10, refresh_time=60, stop_on_failure=False):
     dag.to_json()
     start = time.time()
 
-    LOG.info("DAG: %s, %s tasks\nRun with %s tasks concurrent and status refreshed per %ss" %
-             (dag.id, len(dag.tasks), concurrent_tasks, refresh_time))
+    LOG.info("DAG: %s, %s tasks" % (dag.id, len(dag.tasks)))
+    LOG.info("Run with %s tasks concurrent and status refreshed per %ss" % (concurrent_tasks, refresh_time))
 
     global TASKS
     TASKS = dag.tasks

@@ -139,30 +139,31 @@ def touch(*paths):
 
 def str2dict(string):
     """
-    transform string "-a b " to dict {"a": "b"}
+    transform string "-a b " or "--a b" to dict {"a": "b"}
     :param string:
     :return:
     """
     assert isinstance(string, str)
     r = {}
 
-    for p in string.split("-"):
+    param = ""
+    value = []
+    for p in string.split():
 
         if not p:
             continue
 
-        tmp = p.split(None, 1)
-        param = tmp[0]
+        if p.startswith("-"):
+            if param:
+                if value:
+                    r[param] = " ".join(value)
+                else:
+                    r[param] = True
 
-        if len(tmp) == 1:
-            value = True
+                param = p.lstrip("-")
+                value = []
         else:
-            value = tmp[1]
-
-        if isinstance(value, str):
-            value = value.strip()
-
-        r[param] = value
+            value.append(p)
 
     return r
 

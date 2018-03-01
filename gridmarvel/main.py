@@ -39,6 +39,20 @@ def get_dal_t(genome, block_size):
     return t
 
 
+def fofn2list(fofn):
+    r = []
+
+    with open(fofn) as fh:
+
+        for line in fh.readlines():
+            line = line.strip()
+
+            if line:
+                r.append(os.path.abspath(line))
+
+    return r
+
+
 def run_patch(cfg, work_dir):
 
     db = "raw_data"
@@ -56,12 +70,14 @@ def run_patch(cfg, work_dir):
         type="sge",
         option="",
         script="""
+rm -rf {db}.db # delete existed db
+
 {bin}/FA2db -c -x{min_length} {db} {fasta}
 {bin}/DBsplit -s{block_size} {db}
 {bin}/DBdust {db}
 {bin}/HPCdaligner {args} -t {t} -r 0 -o {db} {db}
     """.format(bin=BIN_DIR, db=db, t=t,
-               fasta=os.path.abspath(cfg["input_fofn"]),
+               fasta=" ".join(fofn2list(cfg["input_fofn"])),
                args=cfg["pat_hpcdaligner_option"],
                min_length=min_length,
                block_size=block_size)
@@ -69,7 +85,7 @@ def run_patch(cfg, work_dir):
 
     dag.add_task(task)
 
-    do_dag(dag, 1, 30)
+    do_dag(dag, 1, int(cfg["refresh_time"]))
 
     dal_plan = os.path.join(work_dir, "%s.dalign.plan" % db)
     meg_plan = os.path.join(work_dir, "%s.merge.plan" % db)
@@ -129,7 +145,7 @@ def run_patch(cfg, work_dir):
         type="sge",
         option="",
         script="""\
-{bin}/LAfix -Q 30 -g -1 {db} {db}.{{block}}.las
+{bin}/LAfix -Q 30 -g -1 {db} {db}.{{block}}.las {db}.{{block}}.fixed.fasta
 """.format(bin=BIN_DIR, db=db),
         block=blocks
     )
@@ -166,7 +182,7 @@ def run_asm(cfg, fix_fasta, work_dir):
     min_length = [int(i[2:]) for i in split_options if i.startswith("-x")][0]
     block_size = [int(i[2:]) for i in split_options if i.startswith("-s")][0]
 
-    t = get_dal_t(cfg["genome"], block_size)
+    t = get_dal_t(cfg["genome_size"], block_size)
 
     db_task = Task(
         id="DB_prepare",
@@ -186,7 +202,7 @@ def run_asm(cfg, fix_fasta, work_dir):
 
     dag.add_task(db_task)
 
-    do_dag(dag)
+    do_dag(dag, 1, int(cfg["refresh_time"]))
 
     dal_plan = os.path.join(work_dir, "%s.dalign.plan" % db)
     meg_plan = os.path.join(work_dir, "%s.merge.plan" % db)
@@ -217,7 +233,7 @@ def run_asm(cfg, fix_fasta, work_dir):
         option="",
         script="""\
 {bin}/{{cmd}}
-{bin}/LAstitch -L -f 50 {db}.{{block}}.las {db}.{{block}}.stitch.las
+{bin}/LAstitch -L -f 50  {db} {db}.{{block}}.las {db}.{{block}}.stitch.las
 {bin}/LAq -d 30 -s 5 -T trim0 -b {{block}} {db} {db}.{{block}}.stitch.las
     """.format(bin=BIN_DIR, db=db),
         cmd=meg_cmds,
@@ -234,7 +250,7 @@ def run_asm(cfg, fix_fasta, work_dir):
         option="",
         script="""\
 {bin}/TKmerge -d {db} q
-{bin}/TKmerge -d {db} trim
+{bin}/TKmerge -d {db} trim0
     """.format(bin=BIN_DIR, db=db)
     )
 
@@ -274,7 +290,7 @@ def run_asm(cfg, fix_fasta, work_dir):
         type="sge",
         option="",
         script="""\
-{bin}/LAgap -L -t trim0 -b {{block}} {db} {db}.{{block}}.stitch.las {db}.{{block}}.gap.las
+{bin}/LAgap -L -t trim0 {db} {db}.{{block}}.stitch.las {db}.{{block}}.gap.las
 {bin}/LAq -s 5 -d 30 -u -t trim0 -T trim1 -b {{block}} {db} {db}.{{block}}.gap.las
     """.format(bin=BIN_DIR, db=db, cov=cfg["coverage"]),
         block=blocks
@@ -289,8 +305,8 @@ def run_asm(cfg, fix_fasta, work_dir):
         type="sge",
         option="",
         script="""\
-TKmerge -d {db} trim1
-    """.format(**locals())
+{bin}/TKmerge -d {db} trim1
+    """.format(bin=BIN_DIR, db=db)
     )
 
     gap_meg_task.set_upstream(*lagap_tasks)
@@ -303,12 +319,12 @@ TKmerge -d {db} trim1
         option="",
         script="""\
 {bin}/LAfilter -L -r repeats -t trim1 -T {args} {db} {db}.{{block}}.gap.las {db}.{{block}}.filtered.las
-    """.format(bin=BIN_DIR, db=db, args=cfg["LAfilter_option"]),
+    """.format(bin=BIN_DIR, db=db, args=cfg["lafilter_option"]),
         block=blocks
     )
 
     gap_meg_task.set_downstream(*filter_tasks)
-    dag.add_task(filter_tasks)
+    dag.add_task(*filter_tasks)
 
     asm_task = Task(
         id="asm",
@@ -320,8 +336,8 @@ export PYTHONPATH={lib_dir}:$PYTHONPATH
 {bin}/LAmerge -S filtered {db} {db}.filtered.las
 {bin}/OGbuild -t trim1 {db} {db}.filtered.las {db}.graphml
 {script}/OGtour.py -c {db} {db}.graphml
-{bin}/LAcorrect -j 4 -r {db}.tour.ids {db}.filtered.las {db}.corrected
-{bin}/FA2db -c {db}_corrected [expand:{db}.corrected.*.fasta]
+{bin}/LAcorrect -j 4 -r {db}.tour.rids {db} {db}.filtered.las {db}.corrected
+{bin}/FA2db -c {db}_corrected {db}.corrected.*.fasta
 {script}/tour2fasta.py -c {db}_corrected -t trim1 {db} {db}.tour.graphml {db}.tour.paths
         """.format(bin=BIN_DIR, db=db, script=SCRIPT_DIR, lib_dir=LIB_DIR)
     )
@@ -373,6 +389,12 @@ def main():
                         filename=os.path.join(".", "all.log"),
                         filemode="w"
                         )
+
+    console = logging.StreamHandler()
+    console.setLevel(logging.INFO)
+    formatter = logging.Formatter('[%(levelname)s] %(asctime)s  %(message)s')
+    console.setFormatter(formatter)
+    logging.getLogger('').addHandler(console)
 
     run_marvel(cfg["general"], ".")
 
